@@ -8,10 +8,19 @@
 
 #define ARRAY_SIZE(array) (sizeof(array)/sizeof(array[0]))
 #define PRINT_TITLE(title) \
-	printf("\n\n\n%s %s %s\n\n",\
+	printf("\n%s %s %s\n",\
 	       &"::::::::::::::::::::::::::::::::::::::::"[(strlen(title)/2)],\
 	       title,\
 	       &"::::::::::::::::::::::::::::::::::::::::"[(strlen(title)/2)])
+
+
+#define TERMINATE_EX(error_msg, subject) { \
+	fprintf(stderr, "CENC FATAL: LINE %d :: %s :: %s\n", __LINE__, subject, error_msg); \
+	exit(EXIT_FAILURE); \
+}
+
+#define TERMINATE(error_msg) TERMINATE_EX(error_msg, "STRERROR")
+
 
 static const char* const main_files[] = {
 	"init.lua",
@@ -22,9 +31,11 @@ static const char* const main_dirs[] = {
 	"data"
 };
 
+
 struct file_array {
-	int nfiles;
 	FILE** files;
+	char** paths;
+	int cnt;
 };
 
 struct pack {
@@ -33,11 +44,6 @@ struct pack {
 };
 
 
-static void terminate(const char* const error_msg)
-{
-	fprintf(stderr, "ABORTING CENC: %s\n", error_msg);
-	exit(EXIT_FAILURE);
-}
 
 static void parse_dir_files(const char* dirpath,
                             void(*clbk)(const char*, const char*, void*),
@@ -45,7 +51,7 @@ static void parse_dir_files(const char* dirpath,
 {
 	DIR* dirp = opendir(dirpath);
 	if (dirp == NULL)
-		terminate(strerror(errno));
+		TERMINATE_EX(strerror(errno), dirpath);
 
 	struct dirent* direntp;
 	while ((direntp = readdir(dirp)) != NULL) {
@@ -54,7 +60,7 @@ static void parse_dir_files(const char* dirpath,
 		} else if (direntp->d_type == DT_DIR &&
 		          (strcmp(direntp->d_name, ".") != 0) &&
 		          (strcmp(direntp->d_name, "..") != 0)) {
-			char subdir[strlen(dirpath) + strlen(direntp->d_name) + 1];
+			char subdir[strlen(dirpath) + strlen(direntp->d_name) + 2];
 			sprintf(subdir, "%s/%s", dirpath, direntp->d_name);
 			parse_dir_files(subdir, clbk, user_data);
 		}
@@ -70,66 +76,81 @@ static void cnt_files_clbk(const char* dirpath,
 	((void)dirpath);
 	((void)filename);
 	struct file_array* const fa = (struct file_array*)user_data;
-	fa->nfiles += 1;
+	fa->cnt += 1;
 }
 
-static void open_files_clbk(const char* dirpath,
-                            const char* filename,
-                            void* user_data)
+static void open_files_clbk(const char* const dirpath,
+                            const char* const filename,
+                            void* const user_data)
 {
-	static int open_idx = 0;
-	
-	char fullpath[strlen(dirpath) + strlen(filename) + 1];
-	sprintf(fullpath, "%s/%s", dirpath, filename);
-	
-	struct file_array* const fa = (struct file_array*)user_data;
-	fa->files[open_idx] = fopen(fullpath, "rb");
-	if (fa->files[open_idx] == NULL)
-		terminate(strerror(errno));
+	static int idx = 0;
 
-	open_idx++;
+	struct file_array* const fa = (struct file_array*)user_data;
+
+                                           /* / */
+	const int pathlen = strlen(dirpath) + 1 + strlen(filename);
+	fa->paths[idx] = malloc(pathlen + 1);
+	if (fa->paths[idx] == NULL)
+		TERMINATE(strerror(errno));
+
+	sprintf(&fa->paths[idx][0], "%s/%s", dirpath, filename);
+	fa->paths[idx][pathlen] = '\0';
+	
+	fa->files[idx] = fopen(fa->paths[idx], "rb");
+	if (fa->files[idx] == NULL)
+		TERMINATE_EX(strerror(errno), fa->paths[idx]);
+
+	idx++;
 }
 
 static void init_file_array(const char* const rootpath, struct file_array* const fa)
 {	
-	fa->nfiles = ARRAY_SIZE(main_files);
+	fa->cnt = ARRAY_SIZE(main_files);
 	fa->files = NULL;
+	fa->paths = NULL;
 
-	PRINT_TITLE("INITIALIZING FILE ARRAY");
-	printf("Finding files...\n");
+	PRINT_TITLE("FILE ARRAY");
+	printf("Finding files... ");
 
 	for (unsigned i = 0; i < ARRAY_SIZE(main_dirs); ++i) {
-		char path[strlen(rootpath) + strlen(main_dirs[i]) + 1];
+		char path[strlen(rootpath) + strlen(main_dirs[i]) + 2];
 		sprintf(path, "%s/%s", rootpath, main_dirs[i]);
 		parse_dir_files(path, cnt_files_clbk, fa);
 	}
 	
-	printf("Total files: %d\n", fa->nfiles);
+	printf("%d files found!\n", fa->cnt);
 
-	fa->files = malloc(sizeof(FILE*) * fa->nfiles);
+	fa->files = malloc(sizeof(FILE*) * fa->cnt);
 	if (fa->files == NULL)
-		terminate(strerror(errno));
+		TERMINATE(strerror(errno));
 
-	printf("Fetching files into RAM...\n");
+	fa->paths = malloc(sizeof(char*) * fa->cnt);
+	if (fa->paths == NULL)
+		TERMINATE(strerror(errno));
+
+	printf("Fetching files into RAM... ");
 	
 	for (unsigned i = 0; i < ARRAY_SIZE(main_files); ++i)
 		open_files_clbk(rootpath, main_files[i], fa);
 	
 	for (unsigned i = 0; i < ARRAY_SIZE(main_dirs); ++i) {
-		char path[strlen(rootpath) + strlen(main_dirs[i]) + 1];
+		char path[strlen(rootpath) + strlen(main_dirs[i]) + 2];
 		sprintf(path, "%s/%s", rootpath, main_dirs[i]);
 		parse_dir_files(path, open_files_clbk, fa);
 	}
 
-	printf("Files fetched.\n");
+	printf("Done!\n");
 }
 
 static void terminate_file_array(struct file_array* const fa)
 {
-	for (int i = 0; i < fa->nfiles; ++i)
+	for (int i = 0; i < fa->cnt; ++i) {
 		fclose(fa->files[i]);
+		free(fa->paths[i]);
+	}
 
 	free(fa->files);
+	free(fa->paths);
 }
 
 
@@ -144,25 +165,25 @@ static long get_file_size(FILE* file)
 static void init_pack(const struct file_array* const fa,
                       struct pack* const pack)
 {
-	PRINT_TITLE("INITIALIZING BINARY PACKAGE");
+	PRINT_TITLE("BINARY PACKAGE");
 
-	printf("Counting unencrypted package size...\n");
+	printf("Counting unencrypted package required buffer size... ");
 	pack->size = 0;
-	for (int i = 0; i < fa->nfiles; ++i)
+	for (int i = 0; i < fa->cnt; ++i)
 		pack->size += get_file_size(fa->files[i]);
 
-	printf("Total unecrypted package size expected: %ld bytes\n", pack->size);
+	printf("%ld bytes counted!\n", pack->size);
 
 	pack->buffer = malloc(sizeof(unsigned char) * pack->size);
 	
-	printf("Copying files content to package area...\n");
+	printf("Copying files content to package buffer... ");
 	unsigned char* bufp = pack->buffer;
-	for (int i = 0; i < fa->nfiles; ++i) {
+	for (int i = 0; i < fa->cnt; ++i) {
 		const long size = get_file_size(fa->files[i]);
 		bufp += fread(bufp, sizeof(unsigned char), size, fa->files[i]);
 	}
 
-	printf("Unencrypted package completed.\n");
+	printf("Done!\n");
 }
 
 static void terminate_pack(struct pack* const pack)
@@ -176,7 +197,7 @@ static void write_pack_to_file(const struct pack* const pack,
 {
 	FILE* file = fopen(filename, "wb");
 	if (file == NULL)
-		terminate(strerror(errno));
+		TERMINATE(strerror(errno));
 	fwrite(pack->buffer, sizeof(unsigned char), pack->size, file);
 	fclose(file);
 }
@@ -210,7 +231,7 @@ int main(const int argc, const char* const* const argv)
 
 	printf("Saving unencrypted pack to file... ");
 	write_pack_to_file(&pack, "unecrypted.bin");
-	printf("done!\n");
+	printf("Done!\n");
 	
 	terminate_pack(&pack);
 	return EXIT_SUCCESS;
