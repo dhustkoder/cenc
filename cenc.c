@@ -22,15 +22,6 @@
 #define TERMINATE(error_msg) TERMINATE_EX(error_msg, "STRERROR")
 
 
-static const char* const main_files[] = {
-	"init.lua",
-	"otclientrc.lua"
-};
-
-static const char* const main_dirs[] = {
-	"data"
-};
-
 
 struct file_array {
 	FILE** files;
@@ -42,7 +33,6 @@ struct pack {
 	unsigned char* buffer;
 	long size;
 };
-
 
 
 static void parse_dir_files(const char* dirpath,
@@ -69,24 +59,21 @@ static void parse_dir_files(const char* dirpath,
 	closedir(dirp);
 }
 
-static void cnt_files_clbk(const char* dirpath,
-                           const char* filename,
-                           void* user_data)
-{
-	((void)dirpath);
-	((void)filename);
-	struct file_array* const fa = (struct file_array*)user_data;
-	fa->cnt += 1;
-}
-
 static void open_files_clbk(const char* const dirpath,
                             const char* const filename,
                             void* const user_data)
 {
-	static int idx = 0;
-
 	struct file_array* const fa = (struct file_array*)user_data;
 
+	const int idx = fa->cnt++;
+
+	fa->files = realloc(fa->files, sizeof(FILE*) * fa->cnt);
+	if (fa->files == NULL)
+		TERMINATE(strerror(errno));
+
+	fa->paths = realloc(fa->paths, sizeof(char*) * fa->cnt);
+	if (fa->paths == NULL)
+		TERMINATE(strerror(errno));
                                            /* / */
 	const int pathlen = strlen(dirpath) + 1 + strlen(filename);
 	fa->paths[idx] = malloc(pathlen + 1);
@@ -99,47 +86,23 @@ static void open_files_clbk(const char* const dirpath,
 	fa->files[idx] = fopen(fa->paths[idx], "rb");
 	if (fa->files[idx] == NULL)
 		TERMINATE_EX(strerror(errno), fa->paths[idx]);
-
-	idx++;
 }
 
-static void init_file_array(const char* const rootpath, struct file_array* const fa)
+static void init_file_array(const char* const* paths, 
+                            const int npaths,
+                            struct file_array* const fa)
 {	
-	fa->cnt = ARRAY_SIZE(main_files);
+	fa->cnt = 0;
 	fa->files = NULL;
 	fa->paths = NULL;
 
 	PRINT_TITLE("FILE ARRAY");
-	printf("Finding files... ");
+	printf("Fetching files... ");
 
-	for (unsigned i = 0; i < ARRAY_SIZE(main_dirs); ++i) {
-		char path[strlen(rootpath) + strlen(main_dirs[i]) + 2];
-		sprintf(path, "%s/%s", rootpath, main_dirs[i]);
-		parse_dir_files(path, cnt_files_clbk, fa);
-	}
+	for (int i = 0; i < npaths; ++i)
+		parse_dir_files(paths[i], open_files_clbk, fa);
 	
-	printf("%d files found!\n", fa->cnt);
-
-	fa->files = malloc(sizeof(FILE*) * fa->cnt);
-	if (fa->files == NULL)
-		TERMINATE(strerror(errno));
-
-	fa->paths = malloc(sizeof(char*) * fa->cnt);
-	if (fa->paths == NULL)
-		TERMINATE(strerror(errno));
-
-	printf("Fetching files into RAM... ");
-	
-	for (unsigned i = 0; i < ARRAY_SIZE(main_files); ++i)
-		open_files_clbk(rootpath, main_files[i], fa);
-	
-	for (unsigned i = 0; i < ARRAY_SIZE(main_dirs); ++i) {
-		char path[strlen(rootpath) + strlen(main_dirs[i]) + 2];
-		sprintf(path, "%s/%s", rootpath, main_dirs[i]);
-		parse_dir_files(path, open_files_clbk, fa);
-	}
-
-	printf("Done!\n");
+	printf("%d files fetched!\n", fa->cnt);
 }
 
 static void terminate_file_array(struct file_array* const fa)
@@ -202,6 +165,8 @@ static void write_pack_to_file(const struct pack* const pack,
 	fclose(file);
 }
 
+
+
 int main(const int argc, const char* const* const argv)
 {
 	PRINT_TITLE("CENC - C FILE ENCRYPTER VERSION 0.1 BY RAFAEL MOURA (DHUSTKODER)");
@@ -211,21 +176,11 @@ int main(const int argc, const char* const* const argv)
 		return 0;
 	}
 
-	const char* const rootpath = argv[1];	
+	const char* const * paths = &argv[1];
 	struct file_array fa;
 	struct pack pack;
 
-	printf("Root Path: %s\n", rootpath);
-	printf("Main Files:\n");
-	for (unsigned i = 0; i < ARRAY_SIZE(main_files); ++i)
-		printf("\t%s/%s\n", rootpath, main_files[i]);
-
-	printf("Main Directories:\n");
-	for (unsigned i = 0; i < ARRAY_SIZE(main_dirs); ++i)
-		printf("\t%s/%s\n", rootpath, main_dirs[i]);
-
-
-	init_file_array(rootpath, &fa);
+	init_file_array(paths, argc - 1, &fa);
 	init_pack(&fa, &pack);
 	terminate_file_array(&fa);
 
