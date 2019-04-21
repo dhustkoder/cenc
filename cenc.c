@@ -24,7 +24,6 @@
 
 
 struct file_array {
-	FILE** files;
 	char** paths;
 	int cnt;
 };
@@ -59,17 +58,13 @@ static void parse_dir_files(const char* dirpath,
 	closedir(dirp);
 }
 
-static void open_files_clbk(const char* const dirpath,
+static void get_files_clbk(const char* const dirpath,
                             const char* const filename,
                             void* const user_data)
 {
 	struct file_array* const fa = (struct file_array*)user_data;
 
 	const int idx = fa->cnt++;
-
-	fa->files = realloc(fa->files, sizeof(FILE*) * fa->cnt);
-	if (fa->files == NULL)
-		TERMINATE(strerror(errno));
 
 	fa->paths = realloc(fa->paths, sizeof(char*) * fa->cnt);
 	if (fa->paths == NULL)
@@ -81,11 +76,7 @@ static void open_files_clbk(const char* const dirpath,
 		TERMINATE(strerror(errno));
 
 	sprintf(&fa->paths[idx][0], "%s/%s", dirpath, filename);
-	fa->paths[idx][pathlen] = '\0';
-	
-	fa->files[idx] = fopen(fa->paths[idx], "rb");
-	if (fa->files[idx] == NULL)
-		TERMINATE_EX(strerror(errno), fa->paths[idx]);
+	fa->paths[idx][pathlen] = '\0';	
 }
 
 static void init_file_array(const char* const* paths, 
@@ -93,26 +84,21 @@ static void init_file_array(const char* const* paths,
                             struct file_array* const fa)
 {	
 	fa->cnt = 0;
-	fa->files = NULL;
 	fa->paths = NULL;
 
 	PRINT_TITLE("FILE ARRAY");
 	printf("Fetching files... ");
 
 	for (int i = 0; i < npaths; ++i)
-		parse_dir_files(paths[i], open_files_clbk, fa);
+		parse_dir_files(paths[i], get_files_clbk, fa);
 	
 	printf("%d files fetched!\n", fa->cnt);
 }
 
 static void terminate_file_array(struct file_array* const fa)
 {
-	for (int i = 0; i < fa->cnt; ++i) {
-		fclose(fa->files[i]);
+	for (int i = 0; i < fa->cnt; ++i)
 		free(fa->paths[i]);
-	}
-
-	free(fa->files);
 	free(fa->paths);
 }
 
@@ -130,23 +116,26 @@ static void init_pack(const struct file_array* const fa,
 {
 	PRINT_TITLE("BINARY PACKAGE");
 
-	printf("Counting unencrypted package required buffer size... ");
 	pack->size = 0;
-	for (int i = 0; i < fa->cnt; ++i)
-		pack->size += get_file_size(fa->files[i]);
-
-	printf("%ld bytes counted!\n", pack->size);
-
-	pack->buffer = malloc(sizeof(unsigned char) * pack->size);
+	pack->buffer = NULL;
 	
 	printf("Copying files content to package buffer... ");
-	unsigned char* bufp = pack->buffer;
+
 	for (int i = 0; i < fa->cnt; ++i) {
-		const long size = get_file_size(fa->files[i]);
-		bufp += fread(bufp, sizeof(unsigned char), size, fa->files[i]);
+		FILE* const file = fopen(fa->paths[i], "rb");
+		if (file == NULL)
+			TERMINATE_EX(strerror(errno), fa->paths[i]);
+		const long size = get_file_size(file);
+		pack->buffer = realloc(pack->buffer, pack->size + size);
+		if (pack->buffer == NULL)
+			TERMINATE(strerror(errno));
+		pack->size += fread(&pack->buffer[pack->size], 1, size, file);
+		fclose(file);
 	}
 
 	printf("Done!\n");
+
+	printf("Unencrypted package size: %ld bytes\n", pack->size);
 }
 
 static void terminate_pack(struct pack* const pack)
