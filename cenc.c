@@ -34,24 +34,40 @@ struct pack {
 };
 
 
-static void parse_dir_files(const char* dirpath,
-                            void(*clbk)(const char*, const char*, void*),
-                            void* user_data)
+static void parse_files(const char* const path,
+                        void(*clbk)(const char*, const char*, void*),
+                        void* user_data)
 {
-	DIR* dirp = opendir(dirpath);
-	if (dirp == NULL)
-		TERMINATE_EX(strerror(errno), dirpath);
+	DIR* dirp = opendir(path);
+	if (dirp == NULL) {
+		FILE* const file = fopen(path, "rb");
+		if (file != NULL) {
+			fclose(file);
+			char tmp[strlen(path) + 1];
+			strcpy(tmp, path);
+			char* const slashaddr = strrchr(tmp, '/');
+			if (slashaddr != NULL) {
+				*slashaddr = '\0';
+				clbk(tmp, slashaddr + 1, user_data);
+			} else {
+				clbk("./", tmp, user_data);
+			}
+			return;
+		} else {
+			TERMINATE_EX(strerror(errno), path);
+		}
+	}
 
 	struct dirent* direntp;
 	while ((direntp = readdir(dirp)) != NULL) {
 		if (direntp->d_type == DT_REG) {
-			clbk(dirpath, direntp->d_name, user_data);
+			clbk(path, direntp->d_name, user_data);
 		} else if (direntp->d_type == DT_DIR &&
 		          (strcmp(direntp->d_name, ".") != 0) &&
 		          (strcmp(direntp->d_name, "..") != 0)) {
-			char subdir[strlen(dirpath) + strlen(direntp->d_name) + 2];
-			sprintf(subdir, "%s/%s", dirpath, direntp->d_name);
-			parse_dir_files(subdir, clbk, user_data);
+			char subdir[strlen(path) + strlen(direntp->d_name) + 2];
+			sprintf(subdir, "%s/%s", path, direntp->d_name);
+			parse_files(subdir, clbk, user_data);
 		}
 	}
 
@@ -90,7 +106,7 @@ static void init_file_array(const char* const* paths,
 	printf("Fetching files... ");
 
 	for (int i = 0; i < npaths; ++i)
-		parse_dir_files(paths[i], get_files_clbk, fa);
+		parse_files(paths[i], get_files_clbk, fa);
 	
 	printf("%d files fetched!\n", fa->cnt);
 }
