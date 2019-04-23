@@ -135,19 +135,33 @@ static void init_pack(const struct file_array* const fa,
 	pack->size = 0;
 	pack->buffer = NULL;
 	
-	printf("Copying files content to package buffer... ");
+	printf("Copying files content to package buffer / Creating cenc_map.c... ");
 	fflush(stdout);
+
+	FILE* const cencmapfile = fopen("cenc_map.c", "w");
+	fprintf(cencmapfile, 
+	        "#include \"cenc_map.h\"\n\n"
+	        "const struct cenc_map cenc_map[%d] = {\n", fa->cnt);
+	
 	for (int i = 0; i < fa->cnt; ++i) {
 		FILE* const file = fopen(fa->paths[i], "rb");
 		if (file == NULL)
 			TERMINATE_EX(strerror(errno), fa->paths[i]);
+
 		const long size = get_file_size(file);
 		pack->buffer = realloc(pack->buffer, pack->size + size);
 		if (pack->buffer == NULL)
 			TERMINATE(strerror(errno));
+
+		fprintf(cencmapfile, "\t{ \"%s\", %ld, %ld },\n",
+		        fa->paths[i], pack->size, size);
+		
 		pack->size += fread(&pack->buffer[pack->size], 1, size, file);
 		fclose(file);
 	}
+
+	fprintf(cencmapfile, "};");
+	fclose(cencmapfile);
 
 	printf("Done!\n");
 	printf("Unencrypted package size: %ld bytes\n", pack->size);
