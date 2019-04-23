@@ -5,10 +5,10 @@ CFLAGS_DEBUG=-O0 -g -fsanitize=address
 CFLAGS_RELEASE=-O3
 SRC=cenc.c
 
-ifeq ($(BUILD_TYPE),Release)
-	CFLAGS += $(CFLAGS_RELEASE)
-else
+ifeq ($(BUILD_TYPE),Debug)
 	CFLAGS += $(CFLAGS_DEBUG)
+else
+	CFLAGS += $(CFLAGS_RELEASE)
 endif
 
 all: cenc

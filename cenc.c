@@ -192,7 +192,7 @@ int main(const int argc, const char* const* const argv)
 	init_pack(&fa, &pack);
 	terminate_file_array(&fa);
 	
-	write_pack_to_file(&pack, "unecrypted.bin");
+	write_pack_to_file(&pack, "unencrypted.bin");
 	terminate_pack(&pack);
 	
 	return EXIT_SUCCESS;
