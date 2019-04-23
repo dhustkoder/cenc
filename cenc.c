@@ -35,10 +35,10 @@ struct pack {
 
 
 static void parse_files(const char* const path,
-                        void(*clbk)(const char*, const char*, void*),
+                        void(* const clbk)(const char*, const char*, void*),
                         void* user_data)
 {
-	DIR* dirp = opendir(path);
+	DIR* const dirp = opendir(path);
 	if (dirp == NULL) {
 		FILE* const file = fopen(path, "rb");
 		if (file != NULL) {
@@ -75,8 +75,8 @@ static void parse_files(const char* const path,
 }
 
 static void get_files_clbk(const char* const dirpath,
-                            const char* const filename,
-                            void* const user_data)
+                           const char* const filename,
+                           void* const user_data)
 {
 	struct file_array* const fa = (struct file_array*)user_data;
 
@@ -104,7 +104,7 @@ static void init_file_array(const char* const* paths,
 
 	PRINT_TITLE("FILE ARRAY");
 	printf("Fetching files... ");
-
+	fflush(stdout);
 	for (int i = 0; i < npaths; ++i)
 		parse_files(paths[i], get_files_clbk, fa);
 	
@@ -136,7 +136,7 @@ static void init_pack(const struct file_array* const fa,
 	pack->buffer = NULL;
 	
 	printf("Copying files content to package buffer... ");
-
+	fflush(stdout);
 	for (int i = 0; i < fa->cnt; ++i) {
 		FILE* const file = fopen(fa->paths[i], "rb");
 		if (file == NULL)
@@ -150,7 +150,6 @@ static void init_pack(const struct file_array* const fa,
 	}
 
 	printf("Done!\n");
-
 	printf("Unencrypted package size: %ld bytes\n", pack->size);
 }
 
@@ -160,16 +159,21 @@ static void terminate_pack(struct pack* const pack)
 }
 
 
+
 static void write_pack_to_file(const struct pack* const pack,
                                const char* const filename)
 {
-	FILE* file = fopen(filename, "wb");
+	FILE* const file = fopen(filename, "wb");
 	if (file == NULL)
 		TERMINATE(strerror(errno));
+	
+	printf("Writing file: %s... ", filename);
+	fflush(stdout);
 	fwrite(pack->buffer, sizeof(unsigned char), pack->size, file);
+	printf("Done!\n");
 	fclose(file);
-}
 
+}
 
 
 int main(const int argc, const char* const* const argv)
@@ -181,19 +185,16 @@ int main(const int argc, const char* const* const argv)
 		return 0;
 	}
 
-	const char* const * paths = &argv[1];
 	struct file_array fa;
 	struct pack pack;
 
-	init_file_array(paths, argc - 1, &fa);
+	init_file_array(argv + 1, argc - 1, &fa);
 	init_pack(&fa, &pack);
 	terminate_file_array(&fa);
-
-	printf("Saving unencrypted pack to file... ");
-	write_pack_to_file(&pack, "unecrypted.bin");
-	printf("Done!\n");
 	
+	write_pack_to_file(&pack, "unecrypted.bin");
 	terminate_pack(&pack);
+	
 	return EXIT_SUCCESS;
 }
 
