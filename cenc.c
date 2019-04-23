@@ -36,7 +36,7 @@ struct pack {
 
 static void parse_files(const char* const path,
                         void(* const clbk)(const char*, const char*, void*),
-                        void* user_data)
+                        void* const user_data)
 {
 	DIR* const dirp = opendir(path);
 	if (dirp == NULL) {
@@ -95,7 +95,7 @@ static void get_files_clbk(const char* const dirpath,
 	fa->paths[idx][pathlen] = '\0';	
 }
 
-static void init_file_array(const char* const* paths, 
+static void init_file_array(const char* const* const paths, 
                             const int npaths,
                             struct file_array* const fa)
 {	
@@ -119,7 +119,7 @@ static void terminate_file_array(struct file_array* const fa)
 }
 
 
-static long get_file_size(FILE* file)
+static long get_file_size(FILE* const file)
 {
 	fseek(file, 0, SEEK_END);
 	long size = ftell(file);
