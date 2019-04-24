@@ -34,23 +34,29 @@ struct pack {
 };
 
 
-static void parse_files(const char* const path,
+static void parse_files(const char* const path_arg,
                         void(* const clbk)(const char*, const char*, void*),
                         void* const user_data)
 {
+	int path_len = strlen(path_arg);
+	char path[path_len + 1];
+	strcpy(path, path_arg);
+	if (path[path_len - 1] == '/')
+		path[--path_len] = '\0';
+
 	DIR* const dirp = opendir(path);
 	if (dirp == NULL) {
 		FILE* const file = fopen(path, "rb");
 		if (file != NULL) {
 			fclose(file);
-			char tmp[strlen(path) + 1];
+			char tmp[path_len + 1];
 			strcpy(tmp, path);
 			char* const slashaddr = strrchr(tmp, '/');
 			if (slashaddr != NULL) {
 				*slashaddr = '\0';
 				clbk(tmp, slashaddr + 1, user_data);
 			} else {
-				clbk("./", tmp, user_data);
+				clbk(".", tmp, user_data);
 			}
 			return;
 		} else {
@@ -85,13 +91,14 @@ static void get_files_clbk(const char* const dirpath,
 	fa->paths = realloc(fa->paths, sizeof(char*) * fa->cnt);
 	if (fa->paths == NULL)
 		TERMINATE(strerror(errno));
+
                                            /* / */
 	const int pathlen = strlen(dirpath) + 1 + strlen(filename);
 	fa->paths[idx] = malloc(pathlen + 1);
 	if (fa->paths[idx] == NULL)
 		TERMINATE(strerror(errno));
 
-	sprintf(&fa->paths[idx][0], "%s/%s", dirpath, filename);
+	sprintf(fa->paths[idx], "%s/%s", dirpath, filename);
 	fa->paths[idx][pathlen] = '\0';	
 }
 
