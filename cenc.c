@@ -4,7 +4,17 @@
 #include <string.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include "tiny-AES-c/aes.h"
 
+#ifdef AES256
+#define AESBYTES 32
+#elif defined(AES192)
+#define AESBYTES 24
+#elif defined(AES128)
+#define AESBYTES 16
+#else 
+#error Must define AES SIZE MACRO
+#endif
 
 #define ARRAY_SIZE(array) (sizeof(array)/sizeof(array[0]))
 #define PRINT_TITLE(title) \
@@ -197,13 +207,73 @@ static void write_pack_to_file(const struct pack* const pack,
 }
 
 
+static void get_aes_keys(unsigned char* const key, unsigned char* const iv) 
+{
+	FILE* const aes_keys_file = fopen("aes_keys.txt", "rt");
+	if (!aes_keys_file)
+		TERMINATE_EX(strerror(errno), "aes_keys.txt");
+
+	int size = 0;
+	char c;
+	
+	printf("AES Key: ");
+	
+	while (size < 33 && (c = fgetc(aes_keys_file)) != '\n') {
+		printf("%.2X ", (unsigned char)c);
+		key[size++] = c;
+	}
+
+	printf("\n");
+
+	if (size != AESBYTES) {
+		fprintf(stderr, "AES Key incompatible size: %d bytes\n", size);
+		TERMINATE("Couldnt get AES Keys");
+	}
+
+	printf("AES Key size: %d\n", size);
+
+	size = 0;
+	printf("IV Key: ");
+	
+	while (size < 17 && (c = fgetc(aes_keys_file)) != '\n') {
+		printf("%.2X ", (unsigned char)c);
+		iv[size++] = c;
+	}
+
+	printf("\n");
+
+	if (size != 16) {
+		fprintf(stderr, "AES Key incompatible size: %d bytes\n", size);
+		TERMINATE("Couldn`t get AES Keys");
+	}
+
+	printf("IV Key size: %d\n", size);
+	fclose(aes_keys_file);
+}
+
+static void encrypt_pack(struct pack* const pack)
+{
+	PRINT_TITLE("Encrypting data pack");
+	unsigned char key[32];
+	unsigned char iv[16];
+
+	printf("Fetching AES Keys...\n");
+	get_aes_keys(key, iv);
+
+    struct AES_ctx ctx;
+    
+    AES_init_ctx_iv(&ctx, key, iv);
+    AES_CTR_xcrypt_buffer(&ctx, pack->buffer, pack->size);
+}
+
+
 int main(const int argc, const char* const* const argv)
 {
 	PRINT_TITLE("CENC - C FILE ENCRYPTER VERSION 0.1 BY RAFAEL MOURA (DHUSTKODER)");
 
 	if (argc < 2) {
 		printf("Usage: %s [otclient root path]\n", argv[0]);
-		return 0;
+		return EXIT_SUCCESS;
 	}
 
 	struct file_array fa;
@@ -214,6 +284,8 @@ int main(const int argc, const char* const* const argv)
 	terminate_file_array(&fa);
 	
 	write_pack_to_file(&pack, "unencrypted.bin");
+	encrypt_pack(&pack);
+	write_pack_to_file(&pack, "encrypted.bin");
 	terminate_pack(&pack);
 	
 	return EXIT_SUCCESS;
