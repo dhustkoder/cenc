@@ -272,7 +272,7 @@ int main(const int argc, const char* const* const argv)
 	PRINT_TITLE("CENC - C FILE ENCRYPTER VERSION 0.1 BY RAFAEL MOURA (DHUSTKODER)");
 
 	if (argc < 2) {
-		printf("Usage: %s [otclient root path]\n", argv[0]);
+		printf("Usage: %s <files and directories to encrypt>\n", argv[0]);
 		return EXIT_SUCCESS;
 	}
 
